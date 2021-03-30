@@ -6,8 +6,9 @@ pragma solidity =0.8.0;
 
 contract Voting is Ownable {
     
-    mapping(address=> bool) private _whitelist;
-    event Whitelisted(address _address);
+    uint winningProposalId;
+    mapping(address=> Voter) private _whitelist;
+    
     
     event VoterRegistered(address voterAddress);
     event ProposalsRegistrationStarted();
@@ -44,42 +45,59 @@ contract Voting is Ownable {
     Proposal[] Proposals;
     
     
-    function whitelist(address _address) public onlyOwner {
-      require(!_whitelist[_address], "This address is already whitelisted !");
-      _whitelist[_address] = true;
-      emit Whitelisted(_address);
-  }
-    
-    function voterRegister(address _address)  public {
-        require(_whitelist[_address] = true, "This address is not whiteListed");
+    function voterRegister(address _address) public {
+        Voter memory voter = Voter(true, false, 0);
+        _whitelist[_address] = voter;
         emit VoterRegistered(_address);
     }
     
     function StartProposalsRegistration() public onlyOwner{
-        // if admin 
-        //Proposals = new Proposal[];
-        
+        status = WorkflowStatus.ProposalsRegistrationStarted;
         emit ProposalsRegistrationStarted();
         emit WorkflowStatusChange(WorkflowStatus.RegisteringVoters,WorkflowStatus.ProposalsRegistrationStarted);
     }
     
     function StopProposalsRegistration() public onlyOwner{
-        // if admin 
+         status = WorkflowStatus.ProposalsRegistrationEnded;
          emit ProposalsRegistrationEnded();
-         emit WorkflowStatusChange(WorkflowStatus.ProposalsRegistrationStarted,WorkflowStatus.VotingSessionEnded);
+         emit WorkflowStatusChange(WorkflowStatus.ProposalsRegistrationStarted,WorkflowStatus.ProposalsRegistrationEnded);
     }
     
+    function RequireIsPropositionStarted() view private{
+        if(status != WorkflowStatus.ProposalsRegistrationStarted) {
+           if(status == WorkflowStatus.RegisteringVoters)
+            revert("The propostion voting recording is not started");
+           else
+            revert("The propostion voting recording is ended");
+        }
+    }
+    
+    function RequireIsVoting() view private{
+         if(status != WorkflowStatus.VotingSessionStarted) {
+           if(status == WorkflowStatus.VotingSessionEnded || status == WorkflowStatus.VotesTallied)
+            revert("The voting is finished");
+           else
+            revert("The voting is not started");
+        }
+    }
+    
+    
     function ProposeRecord(address _address, string memory _descriptionProposal) public {
-        // une propsition par user ?
-        require(_whitelist[_address] = true, "This address is not whiteListed");
+        
+        RequireIsPropositionStarted();
+        Voter memory voter = _whitelist[_address];
+        RequireUserRegistered(voter);
+        
         Proposals.push(Proposal(_descriptionProposal, 0));
         uint proposalId = Proposals.length - 1;
+        
         emit ProposalRegistered(proposalId);
     }
     
     
-    function SartVote() public onlyOwner{
+    function StartVote() public onlyOwner{
         status = WorkflowStatus.VotingSessionStarted;
+        
         emit WorkflowStatusChange(WorkflowStatus.ProposalsRegistrationStarted,WorkflowStatus.VotingSessionStarted);
         emit VotingSessionStarted();
     }
@@ -91,9 +109,18 @@ contract Voting is Ownable {
     }
     
     function VoteUser(address _address, uint propoalId) public {
+        
+        Voter memory voter = _whitelist[_address];
+        
+        RequireIsVoting();
+        
         // if already vote no require
-        require(_whitelist[_address] = true, "This address is not whiteListed");
-        require(status ==  WorkflowStatus.VotingSessionStarted, "Error...");
+        
+        RequireUserRegistered(voter);
+        
+        require(!voter.hasVoted, "This user has already voted");
+        
+        voter.hasVoted = true;
         emit Voted(_address, propoalId);
     }
     
@@ -103,6 +130,9 @@ contract Voting is Ownable {
         emit VotesTallied();
     }
     
-    
+    function RequireUserRegistered(Voter memory voter) pure private {
+         
+         require(voter.isRegistered, "This user is not registerd");
+    }
     
 }
