@@ -19,7 +19,7 @@ contract Voting is Ownable {
     event VotingSessionStarted();
     event VotingSessionEnded();
     event Voted (address voter, uint proposalId);
-    event VotesTallied();
+    event VotesTallied(string proposalWinning);
     event WorkflowStatusChange(WorkflowStatus previousStatus, WorkflowStatus newStatus);
     
     struct Voter {
@@ -62,71 +62,67 @@ contract Voting is Ownable {
         
         if(_status == WorkflowStatus.ProposalsRegistrationStarted) {
             require(status ==  WorkflowStatus.RegisteringVoters,"Users not registered yet");
-            StartProposalsRegistration();
+             emit ProposalsRegistrationStarted();
         }
         else if(_status == WorkflowStatus.ProposalsRegistrationEnded){
             require(status ==  WorkflowStatus.ProposalsRegistrationStarted,"Proposal session not started");
-            StopProposalsRegistration();
+            emit ProposalsRegistrationEnded();
         }  
         else if(_status == WorkflowStatus.VotingSessionStarted){
             require(status ==  WorkflowStatus.ProposalsRegistrationEnded,"Proposal session not ended");
-            StartVote();
+            emit VotingSessionStarted();
         } 
         else if(_status == WorkflowStatus.VotingSessionEnded){
             require(status ==  WorkflowStatus.VotingSessionStarted,"voting session not started");
-            StopVote();
+            emit VotingSessionEnded();
         }
          else if(_status == WorkflowStatus.VotesTallied){
-             require(status ==  WorkflowStatus.VotingSessionEnded,"voting session not ended");
              CountProposals();
          }
             
-        emit WorkflowStatusChange(_status, status);
+        emit WorkflowStatusChange(status,_status);
         status = _status;
     }
     
-    function StartProposalsRegistration() private{
-        status = WorkflowStatus.ProposalsRegistrationStarted;
-        emit ProposalsRegistrationStarted();
-        emit WorkflowStatusChange(WorkflowStatus.RegisteringVoters,WorkflowStatus.ProposalsRegistrationStarted);
-    }
-    
-    function StopProposalsRegistration() private{
-         status = WorkflowStatus.ProposalsRegistrationEnded;
-         emit ProposalsRegistrationEnded();
-         emit WorkflowStatusChange(WorkflowStatus.ProposalsRegistrationStarted,WorkflowStatus.ProposalsRegistrationEnded);
-    }
-    
-    function StartVote() private{
-        require(status == WorkflowStatus.RegisteringVoters, "Users not already registered");
-        status = WorkflowStatus.VotingSessionStarted;
-        emit WorkflowStatusChange(WorkflowStatus.ProposalsRegistrationStarted,WorkflowStatus.VotingSessionStarted);
-        emit VotingSessionStarted();
-    }
     
     function StopVote() private onlyOwner{
          require(status == WorkflowStatus.VotingSessionStarted, "Vooting has not started yet");
         status = WorkflowStatus.VotingSessionStarted;
-        emit WorkflowStatusChange(WorkflowStatus.VotingSessionStarted,WorkflowStatus.VotingSessionEnded);
         emit VotingSessionEnded();
+        // count proposals and write winner
     }
     
     function CountProposals() private {
-        // count each proposal
-        emit WorkflowStatusChange(WorkflowStatus.VotingSessionStarted,WorkflowStatus.VotingSessionEnded);
-        emit VotesTallied();
+        
+        require(status ==  WorkflowStatus.VotingSessionEnded,"voting session not ended");
+        
+        uint maxCount = 0;
+        uint proposalIdWInner = 0;
+        
+        uint proposalId;
+        
+        for(proposalId =0;proposalId< Proposals.length;proposalId++){
+            uint countProposalID = Proposals[proposalId].voteCount;
+            if (countProposalID > maxCount){
+                maxCount = countProposalID;
+                proposalIdWInner = proposalId;
+            }
+        }
+        
+        
+        emit VotesTallied(Proposals[proposalIdWInner].description);
     }
     // --------------------------------------------------------------------------------------------------------------
     
     // Users voting actions
     // --------------------------------------------------------------------------------------------------------------
     function ProposeRecord(address _address, string memory _descriptionProposal) public {
-        require(!_Proposers[_address], "This user has already made a proposal");
-        _Proposers[_address] = true;
         RequireIsPropositionStarted();
         Voter memory voter = _whitelist[_address];
         RequireUserRegistered(voter);
-        
+        require(!_Proposers[_address], "This user has already made a proposal");
+        _Proposers[_address] = true;
+       
         Proposals.push(Proposal(_descriptionProposal, 0));
         uint proposalId = Proposals.length - 1;
         
@@ -134,19 +130,16 @@ contract Voting is Ownable {
     }
     
     function VoteUser(address _address, uint propoalId) public {
-        
-        Voter memory voter = _whitelist[_address];
-        
         RequireIsVoting();
-        
         // if already vote no require
-        
+        Voter memory voter = _whitelist[_address];
         RequireUserRegistered(voter);
         
         require(!voter.hasVoted, "This user has already voted");
         
-        voter.hasVoted = true;
+        _whitelist[_address].hasVoted = true;
         Proposals[propoalId].voteCount += 1; 
+        
         emit Voted(_address, propoalId);
     }
     // --------------------------------------------------------------------------------------------------------------
