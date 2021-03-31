@@ -84,7 +84,7 @@ contract Voting is Ownable {
     
     function  AdminActions(WorkflowStatus _status) private {
         
-        // we convert enum in uint to increment it athe end of this call to have the next awaited status for the next call
+        // we convert enum in uint to increment it at the end of this call to have the next awaited status for the next call
         uint istatus = uint(_status);
         
         // we test if the next event action awaited is the good one if not we throw an error
@@ -166,18 +166,18 @@ contract Voting is Ownable {
         emit ProposalRegistered(proposalId);
     }
     
-    function VoteUser(address _address, uint propoalId) public {
+    function VoteUser(address _address, uint proposalId) public {
         RequireIsVoting();
         // if already vote no require
         Voter memory voter = _whitelist[_address];
         RequireUserRegistered(voter);
-        
+        uint lenProposals = Proposals.length;
+        require(proposalId < lenProposals, "This proposition doesn't exist");
         require(!voter.hasVoted, "This user has already voted");
         
         _whitelist[_address].hasVoted = true;
-        Proposals[propoalId].voteCount += 1; 
-        
-        emit Voted(_address, propoalId);
+        Proposals[proposalId].voteCount += 1; 
+        emit Voted(_address, proposalId);
     }
     // --------------------------------------------------------------------------------------------------------------
     
