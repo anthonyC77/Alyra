@@ -10,7 +10,9 @@ contract Voting is Ownable {
     mapping(address=> Voter) private _whitelist;
     mapping(address=> bool) private _Proposers;
     Proposal[] Proposals;
-    
+    uint[] StatusArray;
+    uint NextiSTatus = 0;
+    WorkflowStatus CurrentStatus = WorkflowStatus.RegisteringVoters;
     
     event VoterRegistered(address voterAddress);
     event ProposalsRegistrationStarted();
@@ -19,7 +21,7 @@ contract Voting is Ownable {
     event VotingSessionStarted();
     event VotingSessionEnded();
     event Voted (address voter, uint proposalId);
-    event VotesTallied(string proposalWinning);
+    event VotesTallied(string proposalWinning, uint nbVoices);
     event WorkflowStatusChange(WorkflowStatus previousStatus, WorkflowStatus newStatus);
     
     struct Voter {
@@ -34,67 +36,102 @@ contract Voting is Ownable {
     }
     
     enum WorkflowStatus {
-        RegisteringVoters,
-        ProposalsRegistrationStarted,
-        ProposalsRegistrationEnded,
-        VotingSessionStarted,
-        VotingSessionEnded,
-        VotesTallied
+        RegisteringVoters,              // 0
+        ProposalsRegistrationStarted,   // 1
+        ProposalsRegistrationEnded,     // 2
+        VotingSessionStarted,           // 3
+        VotingSessionEnded,             // 4
+        VotesTallied                    // 5
     }
-    
-    WorkflowStatus status = WorkflowStatus.RegisteringVoters;
     
     // Admin actions
     // --------------------------------------------------------------------------------------------------------------
-    function voterRegister(address _address) public onlyOwner {
-        require(status ==  WorkflowStatus.RegisteringVoters, "The voting registering is ended");
+    function AdminVoterRegister(address _address) public onlyOwner {
+        require(CurrentStatus ==  WorkflowStatus.RegisteringVoters, "The voting registering is ended");
         require(!_whitelist[_address].isRegistered, "User already registred");
-        
-        require(status ==  WorkflowStatus.RegisteringVoters, "The voting registering is ended");
         
         Voter memory voter = Voter(true, false, 0);
         _whitelist[_address] = voter;
         _Proposers[_address] = false;
-        emit VoterRegistered(_address);
-    }
-    
-    function  AdminActions(WorkflowStatus _status) public onlyOwner{
         
-        if(_status == WorkflowStatus.ProposalsRegistrationStarted) {
-            require(status ==  WorkflowStatus.RegisteringVoters,"Users not registered yet");
-             emit ProposalsRegistrationStarted();
-        }
-        else if(_status == WorkflowStatus.ProposalsRegistrationEnded){
-            require(status ==  WorkflowStatus.ProposalsRegistrationStarted,"Proposal session not started");
-            emit ProposalsRegistrationEnded();
-        }  
-        else if(_status == WorkflowStatus.VotingSessionStarted){
-            require(status ==  WorkflowStatus.ProposalsRegistrationEnded,"Proposal session not ended");
-            emit VotingSessionStarted();
-        } 
-        else if(_status == WorkflowStatus.VotingSessionEnded){
-            require(status ==  WorkflowStatus.VotingSessionStarted,"voting session not started");
-            emit VotingSessionEnded();
-        }
-         else if(_status == WorkflowStatus.VotesTallied){
-             CountProposals();
-         }
-            
-        emit WorkflowStatusChange(status,_status);
-        status = _status;
+        NextiSTatus = 1;
+        CurrentStatus = WorkflowStatus.RegisteringVoters;
+        
+        emit VoterRegistered(_address);
+        emit WorkflowStatusChange(WorkflowStatus.RegisteringVoters, WorkflowStatus.RegisteringVoters);
+    }
+    
+    function AdminRegisterProsalsStart() public onlyOwner{
+        AdminActions(WorkflowStatus.ProposalsRegistrationStarted);
+    }
+    
+    function AdminRegisterProsalsStop() public onlyOwner{
+        AdminActions(WorkflowStatus.ProposalsRegistrationEnded);
+    }
+    
+    function AdminStartVoting() public onlyOwner{
+        AdminActions(WorkflowStatus.VotingSessionStarted);
+    }
+    
+    function AdminStopVoting() public onlyOwner{
+        AdminActions(WorkflowStatus.VotingSessionEnded);
+    }
+    
+    function AdminAllied() public onlyOwner{
+        AdminActions(WorkflowStatus.VotesTallied);
     }
     
     
-    function StopVote() private onlyOwner{
-         require(status == WorkflowStatus.VotingSessionStarted, "Vooting has not started yet");
-        status = WorkflowStatus.VotingSessionStarted;
-        emit VotingSessionEnded();
-        // count proposals and write winner
+    function  AdminActions(WorkflowStatus _status) private {
+        
+        // we convert enum in uint to increment it athe end of this call to have the next awaited status for the next call
+        uint istatus = uint(_status);
+        
+        // we test if the next event action awaited is the good one if not we throw an error
+        // if it's more than 5 it's after the last WorkflowStatus
+        if(istatus != NextiSTatus || istatus > 5)
+            revert("The next action is not the awaited one");
+          
+        if(_status == WorkflowStatus.ProposalsRegistrationStarted) 
+            RegisterProposalsStart();
+        else if(_status == WorkflowStatus.ProposalsRegistrationEnded)
+            RegisterProposalsStop();
+        else if(_status == WorkflowStatus.VotingSessionStarted)
+            VotingStart();
+        else if(_status == WorkflowStatus.VotingSessionEnded)
+            VotingStop();
+         else if(_status == WorkflowStatus.VotesTallied)
+             CountProposals();
+         
+           
+        emit WorkflowStatusChange(CurrentStatus,_status);
+        NextiSTatus++;
+        CurrentStatus = _status;
+    }
+    
+    function RegisterProposalsStart() private{
+        require(CurrentStatus ==  WorkflowStatus.RegisteringVoters,"Users not registered yet");
+        emit ProposalsRegistrationStarted();
+    }
+    
+    function RegisterProposalsStop() private{
+        require(CurrentStatus ==  WorkflowStatus.ProposalsRegistrationStarted,"Proposal session not started");
+        emit ProposalsRegistrationEnded();
+    }
+    
+    function VotingStart() private{
+        require(CurrentStatus ==  WorkflowStatus.ProposalsRegistrationEnded,"Proposal session not ended");
+            emit VotingSessionStarted();
+    }
+    
+    function VotingStop() private{
+        require(CurrentStatus ==  WorkflowStatus.VotingSessionStarted,"voting session not started");
+            emit VotingSessionEnded();
     }
     
     function CountProposals() private {
         
-        require(status ==  WorkflowStatus.VotingSessionEnded,"voting session not ended");
+        require(CurrentStatus ==  WorkflowStatus.VotingSessionEnded,"voting session not ended");
         
         uint maxCount = 0;
         uint proposalIdWInner = 0;
@@ -110,7 +147,7 @@ contract Voting is Ownable {
         }
         
         
-        emit VotesTallied(Proposals[proposalIdWInner].description);
+        emit VotesTallied(Proposals[proposalIdWInner].description, maxCount);
     }
     // --------------------------------------------------------------------------------------------------------------
     
@@ -148,8 +185,8 @@ contract Voting is Ownable {
     // Required Actions
     // --------------------------------------------------------------------------------------------------------------
     function RequireIsPropositionStarted() view private{
-        if(status != WorkflowStatus.ProposalsRegistrationStarted) {
-           if(status == WorkflowStatus.RegisteringVoters)
+        if(CurrentStatus != WorkflowStatus.ProposalsRegistrationStarted) {
+           if(CurrentStatus == WorkflowStatus.RegisteringVoters)
             revert("The propostion voting recording is not started");
            else
             revert("The propostion voting recording is ended");
@@ -157,8 +194,8 @@ contract Voting is Ownable {
     }
     
     function RequireIsVoting() view private{
-         if(status != WorkflowStatus.VotingSessionStarted) {
-           if(status == WorkflowStatus.VotingSessionEnded || status == WorkflowStatus.VotesTallied)
+         if(CurrentStatus != WorkflowStatus.VotingSessionStarted) {
+           if(CurrentStatus == WorkflowStatus.VotingSessionEnded || CurrentStatus == WorkflowStatus.VotesTallied)
             revert("The voting is finished");
            else
             revert("The voting is not started");
