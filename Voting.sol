@@ -96,7 +96,7 @@ contract Voting is Ownable {
             
         // we test if the next event action awaited is the good one if not we throw an error
         if(istatus != NextiStatus)
-            revert(ErrorStatus());
+            ErrorStatus();
           
         if(_status == WorkflowStatus.ProposalsRegistrationStarted) 
             emit ProposalsRegistrationStarted();
@@ -114,21 +114,22 @@ contract Voting is Ownable {
         CurrentStatus = _status;
     }
     
-    function ErrorStatus() private view returns(string memory){
-        string memory nextStep = "The next awaited step is ";
+    function ErrorStatus() view private {
         string memory statusAwaited = "";
+        if(NextiStatus == 0)
+            statusAwaited = "The first step is the registration of adresses";
         if(NextiStatus == 1)
-            statusAwaited = "the proposal registration starting";
+            statusAwaited = "The next awaited step is the proposal registration starting";
         else if(NextiStatus == 2)
-            statusAwaited = "the proposal registration ending"; 
+            statusAwaited = "The next awaited step is the proposal registration ending"; 
         else if(NextiStatus == 3)
-            statusAwaited = "the vote starting"; 
+            statusAwaited = "The next awaited step is the vote starting"; 
         else if(NextiStatus == 4)
-            statusAwaited = "the vote ending"; 
+            statusAwaited = "The next awaited step is the vote ending"; 
         else if(NextiStatus == 5)
-            statusAwaited = "the vote counting"; 
+            statusAwaited = "The next awaited step is the vote counting"; 
         
-        return string(abi.encodePacked(nextStep,statusAwaited)); 
+        revert(statusAwaited); 
     }
     
     function CountProposals() private {
@@ -137,15 +138,19 @@ contract Voting is Ownable {
         uint proposalIdWInner = 0;
         
         uint proposalId;
+        uint totalCount = 0;
         
         for(proposalId =0;proposalId< Proposals.length;proposalId++){
             uint countProposalID = Proposals[proposalId].voteCount;
+            totalCount += countProposalID;
             if (countProposalID > maxCount){
                 maxCount = countProposalID;
                 proposalIdWInner = proposalId;
             }
         }
-        // if zero votes ?
+        
+        require(totalCount>0, "There is no winning proposition no votes were done");
+        
         emit VotesTallied(Proposals[proposalIdWInner].description, maxCount);
     }
     // --------------------------------------------------------------------------------------------------------------
