@@ -10,8 +10,9 @@ contract Voting is Ownable {
     mapping(address=> Voter) private _whitelist;
     Proposal[] Proposals;
     uint[] StatusArray;
-    uint NextiSTatus = 0;
+    uint NextiStatus = 0;
     WorkflowStatus CurrentStatus = WorkflowStatus.RegisteringVoters;
+    uint nbAddress = 0;
     
     event VoterRegistered(address voterAddress);
     event ProposalsRegistrationStarted();
@@ -43,6 +44,8 @@ contract Voting is Ownable {
         VotesTallied                    // 5
     }
     
+    
+    
     // Admin actions
     // --------------------------------------------------------------------------------------------------------------
     function AdminVoterRegister(address _address) public onlyOwner {
@@ -52,18 +55,21 @@ contract Voting is Ownable {
         Voter memory voter = Voter(true, false, 0);
         _whitelist[_address] = voter;
         
-        NextiSTatus = 1;
+        NextiStatus = 1;
         CurrentStatus = WorkflowStatus.RegisteringVoters;
+        nbAddress++;
         
         emit VoterRegistered(_address);
         emit WorkflowStatusChange(WorkflowStatus.RegisteringVoters, WorkflowStatus.RegisteringVoters);
     }
     
     function AdminRegisterProsalsStart() public onlyOwner{
+        require(nbAddress > 0, "You can't start proposals registration, no adresses are registered");
         AdminActions(WorkflowStatus.ProposalsRegistrationStarted);
     }
     
     function AdminRegisterProsalsStop() public onlyOwner{
+        require(Proposals.length > 0, "You can't stop proposals registration, no propositions are registered");
         AdminActions(WorkflowStatus.ProposalsRegistrationEnded);
     }
     
@@ -79,57 +85,53 @@ contract Voting is Ownable {
         AdminActions(WorkflowStatus.VotesTallied);
     }
     
-    
-    function  AdminActions(WorkflowStatus _status) private {
+    function AdminActions(WorkflowStatus _status) private {
         
         // we convert enum in uint to increment it at the end of this call to have the next awaited status for the next call
         uint istatus = uint(_status);
         
+         // if it's more than 5 it's after the last WorkflowStatus
+        if(istatus > 5)
+            revert("There is not further step after the vote is tallied");
+            
         // we test if the next event action awaited is the good one if not we throw an error
-        // if it's more than 5 it's after the last WorkflowStatus
-        if(istatus != NextiSTatus || istatus > 5)
-            revert("The next action is not the awaited one");
+        if(istatus != NextiStatus)
+            revert(ErrorStatus());
           
         if(_status == WorkflowStatus.ProposalsRegistrationStarted) 
-            RegisterProposalsStart();
+            emit ProposalsRegistrationStarted();
         else if(_status == WorkflowStatus.ProposalsRegistrationEnded)
-            RegisterProposalsStop();
+            emit ProposalsRegistrationEnded();
         else if(_status == WorkflowStatus.VotingSessionStarted)
-            VotingStart();
+            emit VotingSessionStarted();
         else if(_status == WorkflowStatus.VotingSessionEnded)
-            VotingStop();
+            emit VotingSessionEnded();
          else if(_status == WorkflowStatus.VotesTallied)
              CountProposals();
-         
            
         emit WorkflowStatusChange(CurrentStatus,_status);
-        NextiSTatus++;
+        NextiStatus++;
         CurrentStatus = _status;
     }
     
-    function RegisterProposalsStart() private{
-        require(CurrentStatus ==  WorkflowStatus.RegisteringVoters,"Users not registered yet");
-        emit ProposalsRegistrationStarted();
-    }
-    
-    function RegisterProposalsStop() private{
-        require(CurrentStatus ==  WorkflowStatus.ProposalsRegistrationStarted,"Proposal session not started");
-        emit ProposalsRegistrationEnded();
-    }
-    
-    function VotingStart() private{
-        require(CurrentStatus ==  WorkflowStatus.ProposalsRegistrationEnded,"Proposal session not ended");
-            emit VotingSessionStarted();
-    }
-    
-    function VotingStop() private{
-        require(CurrentStatus ==  WorkflowStatus.VotingSessionStarted,"voting session not started");
-            emit VotingSessionEnded();
+    function ErrorStatus() private view returns(string memory){
+        string memory nextStep = "The next awaited step is ";
+        string memory statusAwaited = "";
+        if(NextiStatus == 1)
+            statusAwaited = "the proposal registration starting";
+        else if(NextiStatus == 2)
+            statusAwaited = "the proposal registration ending"; 
+        else if(NextiStatus == 3)
+            statusAwaited = "the vote starting"; 
+        else if(NextiStatus == 4)
+            statusAwaited = "the vote ending"; 
+        else if(NextiStatus == 5)
+            statusAwaited = "the vote counting"; 
+        
+        return string(abi.encodePacked(nextStep,statusAwaited)); 
     }
     
     function CountProposals() private {
-        
-        require(CurrentStatus ==  WorkflowStatus.VotingSessionEnded,"voting session not ended");
         
         uint maxCount = 0;
         uint proposalIdWInner = 0;
@@ -143,8 +145,7 @@ contract Voting is Ownable {
                 proposalIdWInner = proposalId;
             }
         }
-        
-        
+        // if zero votes ?
         emit VotesTallied(Proposals[proposalIdWInner].description, maxCount);
     }
     // --------------------------------------------------------------------------------------------------------------
@@ -164,7 +165,6 @@ contract Voting is Ownable {
     
     function VoteUser(address _address, uint proposalId) public {
         RequireIsVoting();
-        // if already vote no require
         Voter memory voter = _whitelist[_address];
         RequireUserRegistered(voter);
         uint lenProposals = Proposals.length;
@@ -183,9 +183,9 @@ contract Voting is Ownable {
     function RequireIsPropositionStarted() view private{
         if(CurrentStatus != WorkflowStatus.ProposalsRegistrationStarted) {
            if(CurrentStatus == WorkflowStatus.RegisteringVoters)
-            revert("The propostion voting recording is not started");
+            revert("The propostion recording is not started");
            else
-            revert("The propostion voting recording is ended");
+            revert("The proposition recording is ended");
         }
     }
     
@@ -201,7 +201,7 @@ contract Voting is Ownable {
     
     function RequireUserRegistered(Voter memory voter) pure private {
          
-         require(voter.isRegistered, "This user is not registerd");
+         require(voter.isRegistered, "This address is not registered");
     }
     // --------------------------------------------------------------------------------------------------------------
     
