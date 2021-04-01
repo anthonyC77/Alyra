@@ -8,7 +8,6 @@ contract Voting is Ownable {
     
     uint winningProposalId;
     mapping(address=> Voter) private _whitelist;
-    mapping(address=> bool) private _Proposers;
     Proposal[] Proposals;
     uint[] StatusArray;
     uint NextiSTatus = 0;
@@ -52,7 +51,6 @@ contract Voting is Ownable {
         
         Voter memory voter = Voter(true, false, 0);
         _whitelist[_address] = voter;
-        _Proposers[_address] = false;
         
         NextiSTatus = 1;
         CurrentStatus = WorkflowStatus.RegisteringVoters;
@@ -157,8 +155,6 @@ contract Voting is Ownable {
         RequireIsPropositionStarted();
         Voter memory voter = _whitelist[_address];
         RequireUserRegistered(voter);
-        require(!_Proposers[_address], "This user has already made a proposal");
-        _Proposers[_address] = true;
        
         Proposals.push(Proposal(_descriptionProposal, 0));
         uint proposalId = Proposals.length - 1;
