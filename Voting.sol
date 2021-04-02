@@ -2,17 +2,17 @@
 
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol";
 
-pragma solidity =0.8.0;
+pragma solidity ^0.8.0;
 
 contract Voting is Ownable {
     
-    uint winningProposalId;
     mapping(address=> Voter) private _whitelist;
+    uint winningProposalId = 0;
     Proposal[] Proposals;
-    uint[] StatusArray;
     uint NextiStatus = 0;
     WorkflowStatus CurrentStatus = WorkflowStatus.RegisteringVoters;
     uint nbAddress = 0;
+    bool ExAequo = false;
     
     event VoterRegistered(address voterAddress);
     event ProposalsRegistrationStarted();
@@ -21,7 +21,7 @@ contract Voting is Ownable {
     event VotingSessionStarted();
     event VotingSessionEnded();
     event Voted (address voter, uint proposalId);
-    event VotesTallied(string proposalWinning, uint nbVoices);
+    event VotesTallied();
     event WorkflowStatusChange(WorkflowStatus previousStatus, WorkflowStatus newStatus);
     
     struct Voter {
@@ -47,28 +47,33 @@ contract Voting is Ownable {
     
     
     // Admin actions
-    // --------------------------------------------------------------------------------------------------------------
-    function AdminVoterRegister(address _address) public onlyOwner {
+    // -------------------------------------------------------------------------------------------------------------
+    // Public functions
+    // -------------------------------------------------------------------------------------------------------------
+   
+    // To register only one adress
+    function AdminVoteRegisterAdress(address _address) public onlyOwner {
         require(CurrentStatus ==  WorkflowStatus.RegisteringVoters, "The voting registering is ended");
-        require(!_whitelist[_address].isRegistered, "User already registred");
-        
-        Voter memory voter = Voter(true, false, 0);
-        _whitelist[_address] = voter;
-        
-        NextiStatus = 1;
-        CurrentStatus = WorkflowStatus.RegisteringVoters;
-        nbAddress++;
-        
-        emit VoterRegistered(_address);
-        emit WorkflowStatusChange(WorkflowStatus.RegisteringVoters, WorkflowStatus.RegisteringVoters);
+        require(!_whitelist[_address].isRegistered, "This address is already registered");
+        RegisterAdress(_address);
+    }
+    // To register a list of adresses
+    function AdminVoteRegisterAdresses(address[] memory _addresses) public onlyOwner {
+        require(CurrentStatus ==  WorkflowStatus.RegisteringVoters, "The voting registering is ended");
+        uint rangeAdresses = 0;
+        for(rangeAdresses=0;rangeAdresses<_addresses.length;rangeAdresses++)
+            require(!_whitelist[_addresses[rangeAdresses]].isRegistered, "One of this addresses is already registered");
+            
+        for(rangeAdresses=0;rangeAdresses<_addresses.length;rangeAdresses++)
+            RegisterAdress(_addresses[rangeAdresses]);
     }
     
-    function AdminRegisterProsalsStart() public onlyOwner{
+    function AdminStartRegisterProposals() public onlyOwner{
         require(nbAddress > 0, "You can't start proposals registration, no adresses are registered");
         AdminActions(WorkflowStatus.ProposalsRegistrationStarted);
     }
     
-    function AdminRegisterProsalsStop() public onlyOwner{
+    function AdminStopRegisterProposals() public onlyOwner{
         require(Proposals.length > 0, "You can't stop proposals registration, no propositions are registered");
         AdminActions(WorkflowStatus.ProposalsRegistrationEnded);
     }
@@ -79,10 +84,28 @@ contract Voting is Ownable {
     
     function AdminStopVoting() public onlyOwner{
         AdminActions(WorkflowStatus.VotingSessionEnded);
+        
     }
     
-    function AdminAllied() public onlyOwner{
+    function AdminTallied() public onlyOwner{
         AdminActions(WorkflowStatus.VotesTallied);
+    }
+    // --------------------------------------------------------------------------------------------------------------
+    // End Public functions
+    // --------------------------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------------------------
+    // Private functions
+    // --------------------------------------------------------------------------------------------------------------
+    function RegisterAdress(address _address) private {
+        Voter memory voter = Voter(true, false, 0);
+        _whitelist[_address] = voter;
+        
+        NextiStatus = 1;
+        CurrentStatus = WorkflowStatus.RegisteringVoters;
+        nbAddress++;
+        
+        emit VoterRegistered(_address);
+        emit WorkflowStatusChange(WorkflowStatus.RegisteringVoters, WorkflowStatus.RegisteringVoters);
     }
     
     function AdminActions(WorkflowStatus _status) private {
@@ -108,9 +131,12 @@ contract Voting is Ownable {
             emit VotingSessionEnded();
          else if(_status == WorkflowStatus.VotesTallied)
              CountProposals();
+         
+         if(_status !=  WorkflowStatus.VotesTallied)
+            NextiStatus++;
            
         emit WorkflowStatusChange(CurrentStatus,_status);
-        NextiStatus++;
+        
         CurrentStatus = _status;
     }
     
@@ -135,8 +161,6 @@ contract Voting is Ownable {
     function CountProposals() private {
         
         uint maxCount = 0;
-        uint proposalIdWInner = 0;
-        
         uint proposalId;
         uint totalCount = 0;
         
@@ -145,22 +169,54 @@ contract Voting is Ownable {
             totalCount += countProposalID;
             if (countProposalID > maxCount){
                 maxCount = countProposalID;
-                proposalIdWInner = proposalId;
+                winningProposalId = proposalId;
             }
         }
         
+       CheckIfExAequo(maxCount);
+        
         require(totalCount>0, "There is no winning proposition no votes were done");
         
-        emit VotesTallied(Proposals[proposalIdWInner].description, maxCount);
+        emit VotesTallied();
+    }
+    
+    // if two or more propositions have the same max votes we put it in the ExAequo variable
+    function CheckIfExAequo(uint maxCount) private {
+         uint nbVotesMax = 0;
+         uint proposalId;
+        for(proposalId = 0;proposalId< Proposals.length;proposalId++){
+           uint countProposalID = Proposals[proposalId].voteCount;
+           if(countProposalID == maxCount){
+               nbVotesMax++;
+           }
+        }
+        
+        ExAequo = nbVotesMax > 1;
     }
     // --------------------------------------------------------------------------------------------------------------
+     // End Private functions
+    // --------------------------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------------------------
+    // End Admin actions
+    // --------------------------------------------------------------------------------------------------------------
     
+    
+    // --------------------------------------------------------------------------------------------------------------
     // Users voting actions
     // --------------------------------------------------------------------------------------------------------------
-    function ProposeRecord(address _address, string memory _descriptionProposal) public {
+    // --------------------------------------------------------------------------------------------------------------
+    // Public functions
+    // --------------------------------------------------------------------------------------------------------------
+    function UsersProposalsRecord(address _address, string memory _descriptionProposal) public {
         RequireIsPropositionStarted();
         Voter memory voter = _whitelist[_address];
         RequireUserRegistered(voter);
+       
+        uint proposalIdFor = 0;
+        for(proposalIdFor =0;proposalIdFor< Proposals.length;proposalIdFor++){
+            string memory description = Proposals[proposalIdFor].description;
+            require(keccak256(bytes(_descriptionProposal)) != keccak256(bytes(description)),"This proposition already exists");
+        }
        
         Proposals.push(Proposal(_descriptionProposal, 0));
         uint proposalId = Proposals.length - 1;
@@ -168,7 +224,7 @@ contract Voting is Ownable {
         emit ProposalRegistered(proposalId);
     }
     
-    function VoteUser(address _address, uint proposalId) public {
+    function UsersVote(address _address, uint proposalId) public {
         RequireIsVoting();
         Voter memory voter = _whitelist[_address];
         RequireUserRegistered(voter);
@@ -180,10 +236,19 @@ contract Voting is Ownable {
         Proposals[proposalId].voteCount += 1; 
         emit Voted(_address, proposalId);
     }
+    
+    function UsersGetWinningProposal() view public returns(uint, string memory, uint){
+        require(CurrentStatus == WorkflowStatus.VotesTallied, "The vote is not tallied yet");
+        require(!ExAequo, "There is no winning proposition, at least two are ex aequo");
+        string memory winningProposal = Proposals[winningProposalId].description;
+        uint count = Proposals[winningProposalId].voteCount;
+        return(winningProposalId,winningProposal, count);
+    }
     // --------------------------------------------------------------------------------------------------------------
-    
-    
-    // Required Actions
+    // End Public functions
+    // --------------------------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------------------------
+    // Private functions
     // --------------------------------------------------------------------------------------------------------------
     function RequireIsPropositionStarted() view private{
         if(CurrentStatus != WorkflowStatus.ProposalsRegistrationStarted) {
@@ -203,11 +268,13 @@ contract Voting is Ownable {
         }
     }
     
-    
     function RequireUserRegistered(Voter memory voter) pure private {
          
          require(voter.isRegistered, "This address is not registered");
     }
     // --------------------------------------------------------------------------------------------------------------
-    
+    // End Private functions
+    // --------------------------------------------------------------------------------------------------------------
+    // End Users voting actions
+    // --------------------------------------------------------------------------------------------------------------
 }
